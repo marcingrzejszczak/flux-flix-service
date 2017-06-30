@@ -7,106 +7,37 @@ import lombok.extern.java.Log;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.sleuth.util.ExceptionUtils;
 import org.springframework.context.annotation.Bean;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.repository.ReactiveMongoRepository;
 import org.springframework.http.MediaType;
-import org.springframework.security.authorization.AuthorizationDecision;
-import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
-import org.springframework.security.config.web.server.HttpSecurity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.userdetails.MapUserDetailsRepository;
-import org.springframework.security.core.userdetails.User;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UserDetailsRepository;
-import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.reactive.function.server.RouterFunction;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.security.Principal;
+import javax.annotation.PostConstruct;
 import java.time.Duration;
 import java.util.Date;
 import java.util.UUID;
 
-import static org.springframework.web.reactive.function.server.RequestPredicates.GET;
-import static org.springframework.web.reactive.function.server.RouterFunctions.route;
 import static org.springframework.web.reactive.function.server.ServerResponse.ok;
 
 @SpringBootApplication
 public class FfsServiceApplication {
 
-    @Bean
-    RouterFunction<?> routerFunction(MovieHandler rh, UserHandler uh) {
-        return route(GET("/movies"), rh::all)
-                .andRoute(GET("/movies/{id}"), rh::byId)
-                .andRoute(GET("/movies/{id}/events"), rh::events)
-                .andRoute(GET("/users/{username}"), uh::byUsername)
-                .andRoute(GET("/users/me"), uh::current);
-    }
-
     public static void main(String[] args) {
+        ExceptionUtils.setFail(true);
         SpringApplication.run(FfsServiceApplication.class, args);
-    }
-}
-
-
-@EnableWebFluxSecurity
-class SecurityConfiguration {
-
-    @Bean
-    UserDetailsRepository userDetailsRepository() {
-        return new MapUserDetailsRepository(user("rob").build(), user("josh").roles("USER","ADMIN").build());
-    }
-
-    private User.UserBuilder user(String username) {
-        return User.withUsername(username).password("password").roles("USER");
-    }
-
-    @Bean
-    SecurityWebFilterChain springSecurity(HttpSecurity http) {
-        return http
-                .authorizeExchange()
-                    .pathMatchers("/users/me").authenticated()
-                    .pathMatchers("/users/{username}").access((auth,context) ->
-                        auth
-                                .map( a-> a.getName().equals(context.getVariables().get("username")))
-                                .map(AuthorizationDecision::new)
-                    )
-                    .anyExchange().hasRole("ADMIN")
-                    .and()
-                .build();
-    }
-}
-
-@Component
-class UserHandler {
-    private final UserDetailsRepository udr;
-
-    UserHandler(UserDetailsRepository udr) {
-        this.udr = udr;
-    }
-
-    Mono<ServerResponse> byUsername(ServerRequest request) {
-        return ok()
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(udr.findByUsername(request.pathVariable("username")), UserDetails.class);
-    }
-
-    Mono<ServerResponse> current(ServerRequest request) {
-        return ok()
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(request.principal()
-                        .cast(Authentication.class)
-                        .map( authentication -> authentication.getPrincipal())
-                        .cast(UserDetails.class),
-                    UserDetails.class
-                );
     }
 }
 
@@ -135,8 +66,6 @@ class MovieHandler {
     }
 }
 
-
-/*
 @RestController
 @RequestMapping("/movies")
 class FluxFlixRestController {
@@ -149,7 +78,8 @@ class FluxFlixRestController {
 
     @GetMapping(value = "/{id}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     Flux<MovieEvent> crossTheStreams(@PathVariable String id) {
-        return fluxFlixService.streamStreams(id);
+        Mono<Movie> movieMono = fluxFlixService.byId(id);
+        return fluxFlixService.streamStreams(movieMono.block());
     }
 
     @GetMapping("/{id}")
@@ -163,7 +93,6 @@ class FluxFlixRestController {
     }
 
 }
-*/
 
 @Log
 @Service
