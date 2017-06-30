@@ -14,6 +14,8 @@ import org.springframework.cloud.sleuth.instrument.web.HttpTraceKeysInjector;
 import org.springframework.cloud.sleuth.util.SpanNameUtil;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.reactive.function.client.ClientRequest;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
@@ -84,11 +86,14 @@ class TraceExchangeFilterFunction implements ExchangeFilterFunction {
 			log.debug("Headers got injected to the client span " + clientSpan);
 		}
 		Mono<ClientResponse> exchange = next.exchange(builder.build());
-		return exchange.doOnError(throwable -> {
-			if (log.isDebugEnabled()) {
-				log.debug("Exception occurred while trying to execute the request. Will close the span [" + clientSpan + "]", throwable);
+		return exchange.doOnNext(response -> {
+			boolean error = response.statusCode().is4xxClientError() || response.statusCode().is5xxServerError();
+			if (error) {
+				if (log.isDebugEnabled()) {
+					log.debug("Non positive status code was returned from the call. Will close the span [" + clientSpan + "]");
+				}
+				errorParser().parseErrorTags(clientSpan, new RestClientException("Status code of the response is [" + response.statusCode().value() + "] and the reason is [" + response.statusCode().getReasonPhrase() + "]"));
 			}
-			errorParser().parseErrorTags(clientSpan, throwable);
 		}).doFinally(signalType -> finish(clientSpan));
 	}
 
