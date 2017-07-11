@@ -31,18 +31,17 @@ public class FfsClientApplication {
 
     @Bean
     CommandLineRunner demo(WebClient client) {
+        final Span foo = tracer.createSpan("foo");
         return strings -> {
-            Span span = tracer.createSpan("start");
-            try {
-                client.get().uri("/movies").retrieve().bodyToFlux(Movie.class)
-                        .filter(movie -> movie.getTitle().equalsIgnoreCase("aeon flux")).flatMap(movie -> {
-                    log.info("Will call movie with id [" + movie.getId() + "]");
-                    return client.get().uri("/{id}/events", movie.getId()).retrieve().bodyToFlux(MovieEvent.class);
-                }).subscribe(movieEvent -> log.info(movieEvent.toString()));
-            } finally {
-                log.info("Closing span");
-                tracer.close(span);
-            }
+            log.info("Let's go!");
+            client.get().uri("/movies").retrieve().bodyToFlux(Movie.class)
+                    .filter(movie -> movie.getTitle().equalsIgnoreCase("aeon flux")).flatMap(movie -> {
+                log.info("Will call movie with id [" + movie.getId() + "]");
+                return client.get().uri("/{id}/events", movie.getId()).retrieve().bodyToFlux(MovieEvent.class);
+            }).subscribe(movieEvent -> {
+                log.info(movieEvent.toString());
+                tracer.close(foo);
+            });
         };
     }
 
